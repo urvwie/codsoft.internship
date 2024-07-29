@@ -1,0 +1,108 @@
+import tkinter as tk
+from tkinter import messagebox, simpledialog
+from tkcalendar import Calendar
+import mysql.connector
+from datetime import datetime
+
+# connecting our sql with credentials
+conn = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    password="UMANGPAHUJA",
+    database="todo_db"
+)
+cursor = conn.cursor()
+
+# using tkinter lib for gui
+class TodoApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("To-Do List App")
+        self.root.geometry("500x600")
+        
+        self.task_name_var = tk.StringVar()
+        
+        self.setup_ui()
+        self.refresh_task_list()
+
+    def setup_ui(self):
+        tk.Label(self.root, text="Task Name").pack(pady=5)
+        tk.Entry(self.root, textvariable=self.task_name_var).pack(pady=5)
+        
+        tk.Label(self.root, text="Task Date").pack(pady=5)
+        self.calendar = Calendar(self.root, selectmode='day', date_pattern='yyyy-mm-dd')
+        self.calendar.pack(pady=5)
+        
+        tk.Button(self.root, text="Add Task", command=self.add_task).pack(pady=5)
+        tk.Button(self.root, text="Search Task", command=self.search_task).pack(pady=5)
+        
+        
+        self.task_listbox = tk.Listbox(self.root)
+        self.task_listbox.pack(pady=20, fill=tk.BOTH, expand=True)
+        
+        self.task_listbox.bind("<Double-1>", self.edit_task)
+        
+        tk.Button(self.root, text="Mark as Done", command=self.mark_as_done).pack(pady=5)
+        tk.Button(self.root, text="Delete Task", command=self.delete_task).pack(pady=5)
+        
+    def add_task(self):
+        task_name = self.task_name_var.get()
+        task_date = self.calendar.get_date()
+        
+        if task_name and task_date:
+            try:
+                formatted_date = datetime.strptime(task_date, "%Y-%m-%d").date()
+                cursor.execute("INSERT INTO tasks (task_name, task_date) VALUES (%s, %s)", (task_name, formatted_date))
+                conn.commit()
+                self.task_name_var.set("")
+                self.refresh_task_list()
+            except Exception as e:
+                messagebox.showerror("Error", f"Error adding task: {e}")
+        else:
+            messagebox.showerror("Error", "Please enter a task name and select a date")
+    
+    def refresh_task_list(self):
+        self.task_listbox.delete(0, tk.END)
+        cursor.execute("SELECT id, task_name, task_date, status FROM tasks")
+        for row in cursor.fetchall():
+            self.task_listbox.insert(tk.END, f"{row[1]} (Due: {row[2]}) - {row[3]}")
+    
+    def edit_task(self, event):
+        selected_task = self.task_listbox.curselection()
+        if selected_task:
+            task_id = selected_task[0] + 1  # Adjusting index to match database ID
+            new_task_name = simpledialog.askstring("Edit Task", "Enter new task name")
+            if new_task_name:
+                cursor.execute("UPDATE tasks SET task_name = %s WHERE id = %s", (new_task_name, task_id))
+                conn.commit()
+                self.refresh_task_list()
+    
+    def search_task(self):
+        search_date = self.calendar.get_date()
+        self.task_listbox.delete(0, tk.END)
+        cursor.execute("SELECT id, task_name, task_date, status FROM tasks WHERE task_date = %s", (search_date,))
+        for row in cursor.fetchall():
+            self.task_listbox.insert(tk.END, f"{row[1]} (Due: {row[2]}) - {row[3]}")
+    
+    def mark_as_done(self):
+        selected_task = self.task_listbox.curselection()
+        if selected_task:
+            task_id = selected_task[0] + 1  # Adjusting index to match database ID
+            cursor.execute("UPDATE tasks SET status = 'Done' WHERE id = %s", (task_id,))
+            conn.commit()
+            self.refresh_task_list()
+    
+    def delete_task(self):
+        selected_task = self.task_listbox.curselection()
+        if selected_task:
+            task_id = selected_task[0] + 1  
+            cursor.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
+            conn.commit()
+            self.refresh_task_list()
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = TodoApp(root)
+    root.mainloop()
+    cursor.close()
+    conn.close()
